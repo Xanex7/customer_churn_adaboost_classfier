@@ -1,54 +1,44 @@
-import time
-import joblib
-from flask import Blueprint, request, jsonify
-from config.config import Config
-from utils.feature_mapper import preprocess_input
-from utils.insight_generator import generate_insights
+import io
+import pandas as pd
+from flask import Blueprint, request, jsonify, send_file
+# import your model loading and feature mapper utils here
 
-predict_bp = Blueprint("predict", __name__)
+@predict_bp.route('/predict-batch', methods=['POST'])
+def predict_batch():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        return jsonify({'error': 'File must be a CSV'}), 400
 
-model = None
-try:
-    model = joblib.load(Config.MODEL_PATH)
-    print("AdaBoostClassifier model successfully loaded.")
-except Exception as e:
-    print(f"Error loading model from {Config.MODEL_PATH}: {e}")
-
-@predict_bp.route("/predict", methods=["POST"])
-def predict():
-    if model is None:
-        return jsonify({"error": "Machine learning model is not loaded on backend."}), 500
-
-    start_time = time.time()
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No JSON payload provided."}), 400
+        df = pd.read_csv(file)
+        
+        # Run inference across rows (adapt mapping based on your feature mapper)
+        predictions = []
+        confidences = []
+        
+        for _, row in df.iterrows():
+            # Apply feature transformations / model prediction logic
+            pred = model.predict([row.values])[0]
+            prob = max(model.predict_proba([row.values])[0]) * 100
+            predictions.append("High Risk (Churn)" if pred == 1 else "Loyal Customer")
+            confidences.append(f"{round(prob, 2)}%")
 
-        df = preprocess_input(data)
+        df['Prediction'] = predictions
+        df['Confidence'] = confidences
 
-        raw_pred = model.predict(df)[0]
-        raw_prob = model.predict_proba(df)[0]
+        # Convert back to CSV in-memory
+        output = io.BytesIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
 
-        prediction_class = int(raw_pred)
-        probabilities = [float(p) for p in raw_prob]
-        confidence = float(max(probabilities))
-
-        processing_time = round((time.time() - start_time) * 1000, 2)
-
-        insights = generate_insights(data, prediction_class, probabilities)
-
-        return jsonify({
-            "prediction": prediction_class,
-            "prediction_label": "Churn Risk" if prediction_class == 1 else "Loyal Customer",
-            "confidence": round(confidence * 100, 2),
-            "probabilities": {
-                "loyal": round(probabilities[0] * 100, 2),
-                "churn": round(probabilities[1] * 100, 2)
-            },
-            "processing_time": f"{processing_time}ms",
-            "insights": insights
-        }), 200
-
+        return send_file(
+            output,
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name="batch_churn_predictions.csv"
+        )
     except Exception as e:
-        return jsonify({"error": f"Inference pipeline failure: {str(e)}"}), 500
+        return jsonify({'error': str(e)}), 500
