@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
-import { FiCpu, FiUser, FiDownload, FiZap, FiShield, FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
+import { FiCpu, FiUser, FiDownload, FiZap, FiShield, FiAlertTriangle, FiCheckCircle, FiUploadCloud } from 'react-icons/fi';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
@@ -55,6 +55,36 @@ export default function Predict() {
     }
   };
 
+  // Step 2.1: Batch CSV Upload & Download Handler
+  const handleBatchUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const batchFormData = new FormData();
+    batchFormData.append('file', file);
+
+    const toastId = toast.loading("Processing batch telemetry...");
+
+    try {
+      const response = await axios.post(`${API_URL}/predict-batch`, batchFormData, {
+        responseType: 'blob', // Crucial for receiving binary file streams!
+      });
+
+      // Create a temporary link element to trigger browser download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'batch_churn_predictions.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      toast.success("Batch CSV evaluated & downloaded!", { id: toastId });
+    } catch (err) {
+      toast.error("Batch processing failed. Ensure backend has /predict-batch endpoint.", { id: toastId });
+    }
+  };
+
   const exportPDF = () => {
     if (!result) return;
     const doc = new jsPDF();
@@ -100,7 +130,19 @@ export default function Predict() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Step 2.2: Batch CSV Upload Button */}
+          <label className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20 cursor-pointer transition-all flex items-center gap-1.5">
+            <FiUploadCloud /> Batch CSV
+            <input 
+              type="file" 
+              accept=".csv" 
+              onChange={handleBatchUpload} 
+              className="hidden" 
+            />
+          </label>
+
           <button onClick={() => loadPreset('high_risk')} className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 transition-all">High Risk Profile</button>
           <button onClick={() => loadPreset('loyal')} className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all">Loyal Profile</button>
           <button onClick={() => setFormData(DEFAULT_FORM)} className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all">Reset</button>
@@ -238,7 +280,7 @@ export default function Predict() {
             ) : (
               <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center text-slate-500 space-y-3">
                 <FiShield className="text-5xl mx-auto opacity-30 animate-pulse text-sky-400" />
-                <p className="text-xs font-mono">Awaiting telemetry payload... Run inference model to view analytics.</p>
+                <p className="text-xs font-mono">Awaiting telemetry payload... Run inference model or upload batch CSV.</p>
               </div>
             )}
           </AnimatePresence>
