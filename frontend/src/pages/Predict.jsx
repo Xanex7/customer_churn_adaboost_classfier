@@ -1,9 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
-import { FiCpu, FiUser, FiDownload, FiZap, FiShield, FiAlertTriangle, FiCheckCircle, FiUploadCloud } from 'react-icons/fi';
+import { 
+  FiCpu, 
+  FiUser, 
+  FiDownload, 
+  FiZap, 
+  FiShield, 
+  FiAlertTriangle, 
+  FiCheckCircle, 
+  FiUploadCloud, 
+  FiRefreshCw, 
+  FiClock 
+} from 'react-icons/fi';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
@@ -24,6 +35,23 @@ export default function Predict() {
   const [formData, setFormData] = useState(DEFAULT_FORM);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  // Fetch recent SQLite audit trail
+  const fetchHistory = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/history`);
+      if (Array.isArray(res.data)) {
+        setHistory(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch audit history:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   const handleChange = (field, val) => {
     setFormData(prev => ({ ...prev, [field]: val }));
@@ -32,9 +60,31 @@ export default function Predict() {
   const loadPreset = (preset) => {
     let data = { ...DEFAULT_FORM };
     if (preset === 'high_risk') {
-      data = { Age: 45, Gender: "Male", Tenure: 3, "Usage Frequency": 2, "Support Calls": 7, "Payment Delay": 18, "Subscription Type": "Basic", "Contract Length": "Monthly", "Total Spend": 150, "Last Interaction": 22 };
+      data = { 
+        Age: 45, 
+        Gender: "Male", 
+        Tenure: 3, 
+        "Usage Frequency": 2, 
+        "Support Calls": 7, 
+        "Payment Delay": 18, 
+        "Subscription Type": "Basic", 
+        "Contract Length": "Monthly", 
+        "Total Spend": 150, 
+        "Last Interaction": 22 
+      };
     } else if (preset === 'loyal') {
-      data = { Age: 29, Gender: "Female", Tenure: 36, "Usage Frequency": 28, "Support Calls": 0, "Payment Delay": 0, "Subscription Type": "Premium", "Contract Length": "Annual", "Total Spend": 2400, "Last Interaction": 1 };
+      data = { 
+        Age: 29, 
+        Gender: "Female", 
+        Tenure: 36, 
+        "Usage Frequency": 28, 
+        "Support Calls": 0, 
+        "Payment Delay": 0, 
+        "Subscription Type": "Premium", 
+        "Contract Length": "Annual", 
+        "Total Spend": 2400, 
+        "Last Interaction": 1 
+      };
     }
     setFormData(data);
     toast.success(`Loaded preset: ${preset.replace('_', ' ').toUpperCase()}`);
@@ -48,6 +98,7 @@ export default function Predict() {
       const response = await axios.post(`${API_URL}/predict`, formData);
       setResult(response.data);
       toast.success("Telemetry evaluated successfully!");
+      fetchHistory(); // Refresh SQLite logs after prediction
     } catch (err) {
       toast.error(err.response?.data?.error || "Inference server error");
     } finally {
@@ -55,7 +106,7 @@ export default function Predict() {
     }
   };
 
-  // Step 2.1: Batch CSV Upload & Download Handler
+  // Option 1: Batch CSV Upload & Download Handler
   const handleBatchUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -67,10 +118,9 @@ export default function Predict() {
 
     try {
       const response = await axios.post(`${API_URL}/predict-batch`, batchFormData, {
-        responseType: 'blob', // Crucial for receiving binary file streams!
+        responseType: 'blob', // Receives binary CSV stream
       });
 
-      // Create a temporary link element to trigger browser download
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -80,11 +130,13 @@ export default function Predict() {
       link.remove();
 
       toast.success("Batch CSV evaluated & downloaded!", { id: toastId });
+      fetchHistory();
     } catch (err) {
-      toast.error("Batch processing failed. Ensure backend has /predict-batch endpoint.", { id: toastId });
+      toast.error("Batch processing failed. Ensure CSV format is valid.", { id: toastId });
     }
   };
 
+  // Executive PDF Exporter
   const exportPDF = () => {
     if (!result) return;
     const doc = new jsPDF();
@@ -130,9 +182,8 @@ export default function Predict() {
           </h1>
         </div>
 
-        {/* Action Controls */}
+        {/* Top Control Bar */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Step 2.2: Batch CSV Upload Button */}
           <label className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20 cursor-pointer transition-all flex items-center gap-1.5">
             <FiUploadCloud /> Batch CSV
             <input 
@@ -150,7 +201,7 @@ export default function Predict() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Form Controls */}
+        {/* Form Controls Column */}
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-7 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
           <h2 className="text-lg font-bold text-sky-400 flex items-center gap-2 mb-6">
             <FiUser /> Customer Telemetry Attributes
@@ -230,8 +281,8 @@ export default function Predict() {
           </form>
         </motion.div>
 
-        {/* Results Panel */}
-        <div className="lg:col-span-5">
+        {/* Results & Audit Panel Column */}
+        <div className="lg:col-span-5 space-y-6">
           <AnimatePresence mode="wait">
             {result ? (
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`bg-slate-900/60 border rounded-2xl p-6 space-y-6 shadow-2xl backdrop-blur-md relative ${isChurn ? 'border-rose-500/40 shadow-rose-500/10' : 'border-emerald-500/40 shadow-emerald-500/10'}`}>
@@ -284,6 +335,33 @@ export default function Predict() {
               </div>
             )}
           </AnimatePresence>
+
+          {/* SQLite Audit Trail Widget */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-md">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-xs font-mono text-sky-400 uppercase font-bold flex items-center gap-1.5">
+                <FiClock /> SQLite Audit Trail (Recent)
+              </span>
+              <button onClick={fetchHistory} className="text-slate-400 hover:text-white text-xs flex items-center gap-1 transition-all">
+                <FiRefreshCw /> Refresh
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {history.length > 0 ? (
+                history.map((log) => (
+                  <div key={log.id} className="flex justify-between items-center text-xs bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 font-mono">
+                    <span className={log.risk_level === 'High' ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {log.prediction_label}
+                    </span>
+                    <span className="text-slate-500">{log.confidence}%</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-600 font-mono text-center py-2">No audit logs recorded yet.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
